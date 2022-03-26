@@ -1,3 +1,4 @@
+from numpy import angle
 import pygame
 import os
 from math import cos, sin, radians
@@ -16,6 +17,8 @@ class Settings(object):
     asteroid_speed = (-5, 5)
     max_asteroids = 5
     asteroid_spawn_delay = 300
+    laser_size = (5, 5)
+
 
 class Timer(object):
     def __init__(self, duraton, with_start=True):
@@ -42,7 +45,7 @@ class Background(object):
     def draw(self, screen):
         screen.blit(self.image, self.rect)
 
-class Spaceship(pygame.sprite.Sprite):
+class Spaceship(pygame.sprite.DirtySprite):
     def __init__(self, filename):
         super().__init__()
         self.filename = filename
@@ -89,6 +92,7 @@ class Spaceship(pygame.sprite.Sprite):
         self.check_border_collision()
         if pygame.sprite.spritecollide(self, game.asteroids, False):
             game.running = False
+        self.dirty = 1
 
     def draw(self, screen):
         screen.blit(self.image, self.rect)
@@ -106,7 +110,45 @@ class Spaceship(pygame.sprite.Sprite):
         elif self.rect.left > Settings.window_width + self.rect.width:
             self.rect.right = 0
 
-class Asteroids(pygame.sprite.Sprite):
+    def shoot(self):
+        if len(game.shots) < 10:
+            Shot1 = Shot(self)
+            game.shots.add(Shot1)
+        
+    
+
+class Shot(pygame.sprite.DirtySprite):
+    def __init__(self, spaceship):
+        super().__init__()
+        self.image = pygame.image.load(os.path.join(Settings.path_image, 'shot.png')).convert_alpha()
+        self.image = pygame.transform.scale(self.image, Settings.laser_size)
+        self.rect = self.image.get_rect()
+        self.rect.center = spaceship.rect.center
+        self.speed = 3
+        self.lifetime = Timer(5000, False)
+        self.max_shots = 10
+        self.shots = []
+        self.speed_x = 0
+        self.speed_y = 0
+        self.angle = spaceship.angle
+    
+    
+    def update(self):
+        if self.lifetime.is_next_stop_reached():
+            self.kill()
+        self.dirty = 1
+        angle = radians(self.angle)
+        self.speed_x = self.speed_x - sin(angle)
+        if self.speed_x > 3:
+            self.speed_x = 3
+        self.speed_y = self.speed_y - cos(angle)
+        if self.speed_y > 3:
+            self.speed_y = 3
+        self.rect.move_ip(self.speed_x, self.speed_y)
+
+
+
+class Asteroids(pygame.sprite.DirtySprite   ):
     def __init__(self, filename, size, speed):
         super().__init__()
         self.image = pygame.image.load(os.path.join(Settings.path_image, filename)).convert_alpha()
@@ -120,6 +162,7 @@ class Asteroids(pygame.sprite.Sprite):
     def update(self):
         self.move()
         self.check_border_collision()
+        self.dirty = 1
 
     def check_border_collision(self):
         if self.rect.top < -self.rect.height:
@@ -156,9 +199,10 @@ class Game(object):
         self.clock = pygame.time.Clock()
         self.background = Background("background.jpg")
         self.spaceship = pygame.sprite.GroupSingle(Spaceship("3.png"))
-        self.asteroids = pygame.sprite.Group()
+        self.asteroids = pygame.sprite.LayeredDirty()
         self.asteroid_timer = Timer(Settings.asteroid_spawn_delay)
         self.running = True
+        self.shots = pygame.sprite.LayeredDirty()
 
     def run(self):
         while self.running:
@@ -181,6 +225,18 @@ class Game(object):
                     self.spaceship.sprite.turn_left()
                 if event.key == pygame.K_UP:
                     self.spaceship.sprite.move()
+                if event.key == pygame.K_RETURN:
+                    self.spaceship.sprite.shoot()
+            if event.type == pygame.KEYUP:
+                if event.key == pygame.K_RIGHT:
+                    self.spaceship.sprite.turn_right()
+                if event.key == pygame.K_LEFT:
+                    self.spaceship.sprite.turn_left()
+                if event.key == pygame.K_UP:
+                    self.spaceship.sprite.move()
+                if event.key == pygame.K_KP_ENTER:
+                    self.spaceship.sprite.shoot()
+
 
     def update(self):
         self.spaceship.sprite.update()
@@ -188,14 +244,16 @@ class Game(object):
         if self.asteroid_timer.is_next_stop_reached():
             if len(self.asteroids) < Settings.max_asteroids:
                 self.asteroids.add(Asteroids(Settings.asteroid_images[random.randint(0, len(Settings.asteroid_images) - 1)], random.randint(*Settings.asteroid_size), (random.randint(*Settings.asteroid_speed), random.randint(*Settings.asteroid_speed)) ))
-    
+        self.shots.update()
+
     def draw(self):
         self.background.draw(self.screen)
         self.spaceship.sprite.draw(self.screen)
         self.asteroids.draw(self.screen)
+        self.shots.draw(self.screen)
 
 if __name__ == "__main__":
     os.environ["SDL_VIDEO_WINDOW_POS"] = "500, 50"
 
     game = Game()
-    game.run() 
+    game.run()
